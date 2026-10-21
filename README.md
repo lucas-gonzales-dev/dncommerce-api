@@ -155,8 +155,8 @@ CLIENTES ||--o{ VENDAS : "1:N"
 Clone o repositório e instale as dependências:
 
 ```bash
-git clone https://github.com/lucas-gonzales/RID99751_Desafio_Integracao_e_modelagem_de_dados_de_um_produto_digital.git
-cd RID99751_Desafio_Integracao_e_modelagem_de_dados_de_um_produto_digital
+git clone https://github.com/lucas-gonzales-dev/dncommerce-api.git
+cd dncommerce-api
 npm install
 ```
 
