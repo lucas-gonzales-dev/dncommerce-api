@@ -1,214 +1,85 @@
 # DNCommerce API
 
-Sistema de gerenciamento de estoque e pedidos desenvolvido para o desafio de Integração e Modelagem de Dados da DNC.
+![Node.js](https://img.shields.io/badge/Node.js-339933?logo=nodedotjs&logoColor=white) ![Express](https://img.shields.io/badge/Express-000000?logo=express&logoColor=white) ![MongoDB](https://img.shields.io/badge/MongoDB-47A248?logo=mongodb&logoColor=white) ![Mongoose](https://img.shields.io/badge/Mongoose-880000?logo=mongoose&logoColor=white)
 
-## Sobre
+API de uma loja de cosméticos: clientes, produtos, estoque, pedidos e vendas. O ponto central do projeto não são as rotas, é a **modelagem**: decidir o que é entidade, o que é relacionamento e o que fica embutido dentro do documento.
 
-API REST para uma loja de produtos de beleza. Permite gerenciar clientes, produtos, estoque, pedidos e vendas. Desenvolvida com Node.js, Express e MongoDB.
+Desafio de *Integração e Modelagem de Dados* da formação **Engenheiro de Software (Escola DNC)**, entregue e aprovado na avaliação do projeto.
 
-## Tecnologias
+## Modelo de dados
 
-- Node.js
-- Express
-- MongoDB
-- Mongoose
-- CORS
-- Dotenv
+```mermaid
+erDiagram
+    CLIENTE ||--o{ PEDIDO : faz
+    PEDIDO ||--|{ ITEM_PEDIDO : "contém (embutido)"
+    PRODUTO ||--o{ ITEM_PEDIDO : "aparece em"
+    PRODUTO ||--|| ESTOQUE : "tem"
+    PEDIDO ||--o| VENDA : "gera"
+    CLIENTE ||--o{ VENDA : "paga"
 
-## Modelagem do Banco de Dados
-
-![Diagrama ER](./docs/diagrama-er.png)
-
-```
-┌──────────────────┐                              ┌──────────────────┐
-│     CLIENTES     │                              │     PRODUTOS     │
-├──────────────────┤                              ├──────────────────┤
-│ _id (PK)         │                              │ _id (PK)         │
-│ nome_cliente     │                              │ nome_produto     │
-│ email (unique)   │                              │ descricao        │
-│ telefone         │                              │ preco            │
-│ endereco         │                              │ categoria        │
-│ data_cadastro    │                              │ marca            │
-│ ativo            │                              │ codigo_barras    │
-└────────┬─────────┘                              │ imagem_url       │
-         │                                        │ ativo            │
-         │ 1:N                                    └────────┬─────────┘
-         │                                                 │
-         ▼                                                 │ 1:1
-┌──────────────────┐                              ┌────────▼─────────┐
-│     PEDIDOS      │                              │     ESTOQUE      │
-├──────────────────┤                              ├──────────────────┤
-│ _id (PK)         │                              │ _id (PK)         │
-│ cliente_id (FK)  │                              │ produto_id (FK)  │
-│ valor_total      │                              │ qtd_disponivel   │
-│ status_pedido    │                              │ qtd_minima       │
-│ data_pedido      │                              │ localizacao      │
-│ endereco_entrega │                              │ ultima_atualizao │
-│ observacoes      │                              └──────────────────┘
-└───┬─────────┬────┘
-    │         │
-    │ 1:1     │ 1:N
-    │         │
-    ▼         ▼
-┌──────────────────┐     ┌──────────────────┐
-│     VENDAS       │     │   ITENS_PEDIDO   │
-├──────────────────┤     ├──────────────────┤
-│ _id (PK)         │     │ produto_id (FK)  │◄─── N:M ───┐
-│ pedido_id (FK)   │     │ quantidade       │            │
-│ cliente_id (FK)  │     │ preco_unitario   │      PRODUTOS
-│ valor_total      │     │ subtotal         │
-│ forma_pagamento  │     └──────────────────┘
-│ status_pagamento │
-│ data_venda       │
-│ desconto         │
-│ valor_final      │
-└──────────────────┘
+    CLIENTE {
+        ObjectId _id
+        string nome_cliente
+        string email "unico"
+        string telefone
+        bool ativo
+    }
+    PRODUTO {
+        ObjectId _id
+        string nome_produto
+        number preco
+        string categoria "enum"
+        string codigo_barras "unico"
+    }
+    ESTOQUE {
+        ObjectId produto_id "unico"
+        number quantidade_disponivel "min 0"
+        number quantidade_minima
+        string localizacao
+    }
+    PEDIDO {
+        ObjectId cliente_id
+        number valor_total
+        string status_pedido "enum"
+        date data_pedido
+    }
+    ITEM_PEDIDO {
+        ObjectId produto_id
+        number quantidade "min 1"
+        number preco_unitario
+        number subtotal
+    }
+    VENDA {
+        ObjectId pedido_id "unico"
+        string forma_pagamento "enum"
+        string status_pagamento
+        number desconto
+        number valor_final
+    }
 ```
 
-<details>
-<summary>Código PlantUML</summary>
+## Decisões de modelagem
 
-```plantuml
-@startuml
-title Diagrama de Entidades e Relacionamentos - DNCommerce
+- **Itens do pedido embutidos no próprio pedido.** Um item não existe sem o pedido e é sempre lido junto com ele. Embutir evita uma coleção extra e um join a cada consulta.
+- **Preço copiado para o item no momento da compra.** Se o preço do produto mudar amanhã, o pedido de hoje continua com o valor que o cliente pagou. Pedido é histórico, não referência viva.
+- **Estoque separado do produto (1:1).** Produto é cadastro, que muda pouco. Estoque é operação, que muda o tempo todo. Separar deixa cada um com sua responsabilidade e permite o alerta de estoque mínimo.
+- **Venda separada do pedido.** Pedido é a intenção de compra. Venda é o pagamento (forma, desconto, status). Um pedido cancelado não vira venda, e o `pedido_id` único impede duas vendas para o mesmo pedido.
+- **Regras no schema.** Enums para status e forma de pagamento, `min: 0` em preço e estoque, e unicidade de e-mail e código de barras: o banco recusa dado inválido mesmo se alguém esquecer de validar na rota.
 
-entity CLIENTES {
-  + _id : ObjectId <<PK>>
-  --
-  nome_cliente
-  email <<unique>>
-  telefone
-  endereco
-  data_cadastro
-  ativo
-}
+## O que a API faz além do CRUD
 
-entity PRODUTOS {
-  + _id : ObjectId <<PK>>
-  --
-  nome_produto
-  descricao
-  preco
-  categoria
-  marca
-  codigo_barras
-  imagem_url
-  ativo
-}
+- Ao criar um pedido, **confere o estoque de cada item**, calcula subtotais e total, e baixa o estoque
+- `GET /estoque/alertas/baixo` lista produtos no estoque mínimo ou abaixo dele
+- `GET /vendas/relatorio` usa o **aggregation pipeline** do MongoDB (`$match` por período + `$group` por forma de pagamento) para devolver total vendido, ticket médio e o valor por forma de pagamento
 
-entity ESTOQUE {
-  + _id : ObjectId <<PK>>
-  --
-  produto_id <<FK>>
-  qtd_disponivel
-  qtd_minima
-  localizacao
-  ultima_atualizacao
-}
+## O que aprendi
 
-entity PEDIDOS {
-  + _id : ObjectId <<PK>>
-  --
-  cliente_id <<FK>>
-  valor_total
-  status_pedido
-  data_pedido
-  endereco_entrega
-  observacoes
-}
+- Modelagem em banco de documentos: quando embutir e quando referenciar
+- Pensar no pedido como registro histórico (preço congelado, venda separada)
+- Aggregation pipeline do MongoDB para relatório, em vez de somar tudo em JavaScript
+- Organizar uma API Express em camadas: rotas, controllers e models
 
-entity ITENS_PEDIDO {
-  --
-  produto_id <<FK>>
-  quantidade
-  preco_unitario
-  subtotal
-}
-
-entity VENDAS {
-  + _id : ObjectId <<PK>>
-  --
-  pedido_id <<FK>>
-  cliente_id <<FK>>
-  valor_total
-  forma_pagamento
-  status_pagamento
-  data_venda
-  desconto
-  valor_final
-}
-
-CLIENTES ||--o{ PEDIDOS : "1:N"
-PEDIDOS ||--o{ ITENS_PEDIDO : "1:N"
-PRODUTOS ||--|| ESTOQUE : "1:1"
-PRODUTOS ||--o{ ITENS_PEDIDO : "N:M"
-PEDIDOS ||--|| VENDAS : "1:1"
-CLIENTES ||--o{ VENDAS : "1:N"
-
-@enduml
-```
-
-</details>
-
-## Como usar
-
-Clone o repositório e instale as dependências:
-
-```bash
-git clone https://github.com/lucas-gonzales-dev/dncommerce-api.git
-cd dncommerce-api
-npm install
-```
-
-Configure o arquivo `.env`:
-
-```env
-PORT=3000
-MONGODB_URI=mongodb://localhost:27017/dncommerce
-```
-
-Inicie o servidor:
-
-```bash
-npm start
-```
-
-Acesse `http://localhost:3000` para verificar se a API está rodando.
-
-## Estrutura
-
-```
-├── src/
-│   ├── config/
-│   │   └── database.js
-│   ├── controllers/
-│   │   ├── clienteController.js
-│   │   ├── produtoController.js
-│   │   ├── estoqueController.js
-│   │   ├── pedidoController.js
-│   │   └── vendaController.js
-│   ├── models/
-│   │   ├── Cliente.js
-│   │   ├── Produto.js
-│   │   ├── Estoque.js
-│   │   ├── Pedido.js
-│   │   └── Venda.js
-│   ├── routes/
-│   │   ├── clienteRoutes.js
-│   │   ├── produtoRoutes.js
-│   │   ├── estoqueRoutes.js
-│   │   ├── pedidoRoutes.js
-│   │   └── vendaRoutes.js
-│   └── server.js
-├── docs/
-│   └── diagrama-er.png
-├── .env
-├── .gitignore
-├── package.json
-└── README.md
-```
-
-## API Endpoints
+## Endpoints
 
 ### Clientes
 
@@ -260,15 +131,25 @@ Acesse `http://localhost:3000` para verificar se a API está rodando.
 | POST | /vendas | Registra nova venda |
 | PUT | /vendas/:id/pagamento | Atualiza status do pagamento |
 
-## Funcionalidades
+## Rodando
 
-- Cadastro e gerenciamento de clientes
-- Cadastro de produtos com categorias (maquiagem, skincare, cabelos, etc.)
-- Controle de estoque com alertas de quantidade mínima
-- Criação de pedidos com múltiplos itens
-- Registro de vendas com diferentes formas de pagamento
-- Relatório de vendas por período
+```bash
+git clone https://github.com/lucas-gonzales-dev/dncommerce-api.git
+cd dncommerce-api
+npm install
+# .env
+# PORT=3000
+# MONGODB_URI=mongodb://localhost:27017/dncommerce
+npm start
+```
 
-## Autor
+## O que eu faria diferente hoje
 
-Lucas Gonzales
+- **Criar o pedido e baixar o estoque dentro de uma transação.** Hoje a conferência e a baixa são passos separados: duas compras simultâneas do último item podem passar na conferência ao mesmo tempo. O caminho é uma transação do MongoDB, ou um `findOneAndUpdate` condicional (`quantidade_disponivel >= x`).
+- Fazer a consulta de estoque baixo direto no banco (`$expr`) em vez de filtrar em memória
+- Testes de integração com um MongoDB em memória
+- Validação de payload com Zod na entrada das rotas
+
+---
+
+Feito por **Lucas Leite Gonzales** · [LinkedIn](https://www.linkedin.com/in/lucas-leite-gonzales-dev/)
